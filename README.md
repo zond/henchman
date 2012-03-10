@@ -37,10 +37,10 @@ Within an EM.synchrony block
 
 or
 
-   Henchman.consume("test") do
+    Henchman.consume("test") do
       puts message.inspect
       puts headers
-    end
+     end
 
 The `script/publish` and `script/consume` scripts provide a test case as simple as possible.
 
