@@ -128,8 +128,9 @@ module Henchman
             forward(result, argument) if result.is_a?(Hash) && argument.is_a?(Hash)
           rescue Exception => e
             handle_error(queue_name, headers, message, e)
+          ensure
+            headers.ack
           end
-          headers.ack
         end
       end
     end
