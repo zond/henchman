@@ -8,9 +8,20 @@ module Henchman
   class Execution
     attr_accessor :headers
     attr_accessor :message
-    def initialize(headers, message)
+    attr_accessor :consumer
+    def initialize(consumer, headers, message)
       @headers = headers
       @message = message
+      @consumer = consumer
+    end
+    def unsubscribe!
+      deferrable = EM::DefaultDeferrable.new
+      @consumer.cancel do
+        deferrable.set_deferred_status :succeeded
+      end
+      Fiber.new do
+        EM::Synchrony.sync deferrable
+      end.resume
     end
   end
 
@@ -132,11 +143,16 @@ module Henchman
   
   def consume(queue_name, &block) 
     with_queue(queue_name) do |queue|
-      queue.subscribe(subscribe_options) do |headers, message|
+      consumer = AMQP::Consumer.new(@@channel, 
+                                    queue, 
+                                    queue.generate_consumer_tag(queue_name), # consumer_tag
+                                    false, # exclusive
+                                    false) # no_ack
+      consumer.on_delivery do |headers, message|
         unless @@channel.connection.closing?
           begin
             argument = Yajl::Parser.parse(message)
-            execution = Execution.new(headers, argument)
+            execution = Execution.new(consumer, headers, argument)
             result = execution.instance_eval(&block)
             forward(result, argument) if result.is_a?(Hash) && argument.is_a?(Hash)
           rescue Exception => e
@@ -146,6 +162,7 @@ module Henchman
           end
         end
       end
+      consumer.consume
     end
   end
 

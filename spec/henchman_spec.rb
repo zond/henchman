@@ -55,9 +55,61 @@ describe Henchman do
     found.should == val
   end
 
-  it 'should let many consumers consume off the same queue'
+  it 'should be able to unsubscribe' do
+    val = rand(1 << 32)
+    found = 0
+    deferrable = EM::DefaultDeferrable.new
+    Henchman.consume("test.queue") do
+      if message["val"] == val
+        found += 1
+        unsubscribe!
+        deferrable.set_deferred_status :succeeded
+      end
+      nil
+    end
+    Henchman.publish("test.queue", :val => val)
+    Henchman.publish("test.queue", :val => val)
+    EM::Synchrony.sync deferrable
+    EM::Synchrony.sleep 0.2
+    found.should == 1
+  end
 
-  it 'should let many producers produce to the same queue'
+  it 'should let many consumers consume off the same queue' do
+    consumers = Set.new
+    found = 0
+    val = rand(1 << 32)
+    deferrable = EM::DefaultDeferrable.new
+    Henchman.consume("test.queue") do
+      if message["val"] == val
+        consumers << "1"
+        found += 1
+        deferrable.set_deferred_status :succeeded if found == 10
+      end
+      nil
+    end
+    Henchman.consume("test.queue") do
+      if message["val"] == val
+        consumers << "2"
+        found += 1
+        deferrable.set_deferred_status :succeeded if found == 10
+      end
+      nil
+    end
+    Henchman.consume("test.queue") do
+      if message["val"] == val
+        consumers << "3"
+        found += 1
+        deferrable.set_deferred_status :succeeded if found == 10
+      end
+      nil
+    end
+    10.times do
+      Henchman.publish("test.queue", :val => val)
+    end
+    EM::Synchrony.sync deferrable
+    consumers.should == Set.new(["1", "2", "3"])
+    found.should == 10
+  end
 
 end
 
