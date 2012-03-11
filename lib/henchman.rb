@@ -3,36 +3,14 @@ require 'em-synchrony'
 require 'amqp'
 require 'yajl'
 
-module Henchman
+require 'henchman/worker'
 
-  class Execution
-    attr_accessor :headers
-    attr_accessor :message
-    attr_accessor :consumer
-    def initialize(consumer, headers, message)
-      @headers = headers
-      @message = message
-      @consumer = consumer
-    end
-    def unsubscribe!
-      deferrable = EM::DefaultDeferrable.new
-      @consumer.cancel do
-        deferrable.set_deferred_status :succeeded
-      end
-      Fiber.new do
-        EM::Synchrony.sync deferrable
-      end.resume
-    end
-  end
+module Henchman
 
   extend self
 
   @@connection = nil
   @@channel = nil
-  @@error_handler = Proc.new do |queue_name, headers, message, exception|
-    STDERR.puts("consume(#{queue_name.inspect}, #{headers.inspect}, #{message.inspect}): #{exception.message}")
-    STDERR.puts(exception.backtrace.join("\n"))
-  end
 
   def amqp_url
     ENV["AMQP_URL"] || "amqp://localhost/"
@@ -126,21 +104,6 @@ module Henchman
     deferrable
   end
 
-  def error_handler=(&block)
-    @@error_handler = block
-  end
-
-  def handle_error(queue_name, headers, message, exception)
-    @@error_handler.call(queue_name, headers, message, exception)
-  end
-
-  def forward(result, argument)
-    queue_name = result.delete("next_queue")
-    Fiber.new do
-      publish(queue_name, argument.merge(result))
-    end.resume
-  end
-  
   def consume(queue_name, &block) 
     with_queue(queue_name) do |queue|
       consumer = AMQP::Consumer.new(@@channel, 
@@ -148,15 +111,21 @@ module Henchman
                                     queue.generate_consumer_tag(queue_name), # consumer_tag
                                     false, # exclusive
                                     false) # no_ack
+      worker = Worker.new(queue_name, consumer, &block)
       consumer.on_delivery do |headers, message|
         unless @@channel.connection.closing?
+          task = worker.task
           begin
-            argument = Yajl::Parser.parse(message)
-            execution = Execution.new(consumer, headers, argument)
-            result = execution.instance_eval(&block)
-            forward(result, argument) if result.is_a?(Hash) && argument.is_a?(Hash)
+            task.headers = headers
+            task.message = Yajl::Parser.parse(message)
+            result = task.call
           rescue Exception => e
-            handle_error(queue_name, headers, message, e)
+            begin
+              task.handle_error(e)
+            rescue Exception => e
+              STDERR.puts e
+              STDERR.puts e.backtrace.join("\n")
+            end
           ensure
             headers.ack
           end
