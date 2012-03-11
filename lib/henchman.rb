@@ -60,8 +60,19 @@ module Henchman
     }
   end
 
+  def stop!
+    with_channel do |channel|
+      channel.close
+    end
+    @@channel = nil
+    with_connection do |connection|
+      connection.close
+    end
+    @@connection = nil
+  end
+
   def with_connection(&block)
-    @@connection ||= AMQP.connect(amqp_options)
+    @@connection = AMQP.connect(amqp_options) if @@connection.nil? || @@connection.status == :closed
     @@connection.on_open do 
       yield @@connection
     end
@@ -69,7 +80,7 @@ module Henchman
 
   def with_channel(&block)
     with_connection do |connection|
-      @@channel ||= AMQP::Channel.new(connection, channel_options)
+      @@channel = AMQP::Channel.new(connection, channel_options) if @@channel.nil? || @@channel.status == :closed
       @@channel.once_open do 
         yield @@channel
       end
@@ -113,8 +124,10 @@ module Henchman
   end
 
   def forward(result, argument)
-    queue_name = result.delete(:next_queue)
-    publish(queue_name, argument.merge(result))
+    queue_name = result.delete("next_queue")
+    Fiber.new do
+      publish(queue_name, argument.merge(result))
+    end.resume
   end
   
   def consume(queue_name, &block) 
