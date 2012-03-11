@@ -164,6 +164,15 @@ module Henchman
   end
   
   #
+  # Shorthand for <code>EM.synchrony do consume(queue_name, &block) end</code>.
+  #
+  def start(queue_name, &block)
+    EM.synchrony do
+      consume(queue_name, &block)
+    end
+  end
+
+  #
   # Consume messages synchronously.
   #
   # @param [String] queue_name the name of the queue to consume messages from.

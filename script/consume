@@ -4,9 +4,7 @@ $: << File.join(File.dirname(__FILE__), "..", "lib")
 
 require 'henchman'
 
-EM.synchrony do
-  Henchman.consume("test") do
-    puts message.inspect
-    puts headers
-  end
+Henchman.start("test") do
+  puts message.inspect
+  puts headers
 end
