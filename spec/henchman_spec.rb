@@ -45,7 +45,7 @@ describe Henchman do
     end
     Henchman.consume("test.queue") do
       if message["val"] == val
-        {"next_queue" => "test.queue2"}
+        publish("test.queue2", "val" => val)
       else
         nil
       end

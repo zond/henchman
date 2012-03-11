@@ -59,24 +59,18 @@ module Henchman
       #
       def call
         @result = instance_eval(&(worker.block))
-        forward
       end
 
       #
-      # Potentially forward the results of this {::Henchman::Worker::Task} to another queue.
+      # Publish something on another queue.
       #
-      # If the result of the {::Henchman::Worker::Task} is a {::Hash} that includes
-      # <code>"next_queue"</code> the message to this {::Henchman::Worker::Task} will be merged
-      # with the result of this {::Henchman::Worker::Task} and sent to the value of the 
-      # <code>"next_queue"</code> key.
+      # @param [String] queue_name the name of the queue on which to publish.
+      # @param [Object] message the message to publish-
       #
-      def forward
-        if result.is_a?(Hash) && message.is_a?(Hash)
-          queue_name = result.delete("next_queue")
-          Fiber.new do
-            Henchman.publish(queue_name, message.merge(result))
-          end.resume
-        end
+      def publish(queue_name, message)
+        Fiber.new do
+          Henchman.publish(queue_name, message)
+        end.resume
       end
 
       #
@@ -121,7 +115,7 @@ module Henchman
     def initialize(queue_name, &block)
       @block = block
       @queue_name = queue_name
-      @error_handler = Proc.new do |exception|
+      @error_handler = Proc.new do
         STDERR.puts("consume(#{queue_name.inspect}, #{headers.inspect}, #{message.inspect}): #{exception.message}")
         STDERR.puts(exception.backtrace.join("\n"))
       end
