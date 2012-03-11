@@ -134,6 +134,7 @@ module Henchman
       end
       consumer.consume
     end
+    worker
   end
 
 end

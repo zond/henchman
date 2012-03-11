@@ -49,6 +49,9 @@ module Henchman
     def task
       Task.new(self)
     end
+    def error(&block)
+      @error_handler = block
+    end
     def unsubscribe!
       deferrable = EM::DefaultDeferrable.new
       consumer.cancel do
