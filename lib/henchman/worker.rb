@@ -27,6 +27,9 @@ module Henchman
           end.resume
         end
       end
+      def ack!
+        headers.ack
+      end
       def unsubscribe!
         worker.unsubscribe!
       end
@@ -35,10 +38,9 @@ module Henchman
     attr_accessor :error_handler
     attr_accessor :consumer
     attr_accessor :block
-    def initialize(queue_name, consumer, &block)
+    def initialize(queue_name, &block)
       @block = block
       @queue_name = queue_name
-      @consumer = consumer
       @error_handler = Proc.new do |exception|
         STDERR.puts("consume(#{queue_name.inspect}, #{headers.inspect}, #{message.inspect}): #{exception.message}")
         STDERR.puts(exception.backtrace.join("\n"))

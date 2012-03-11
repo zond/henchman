@@ -105,20 +105,21 @@ module Henchman
   end
 
   def consume(queue_name, &block) 
+    worker = Worker.new(queue_name, &block)
     with_queue(queue_name) do |queue|
       consumer = AMQP::Consumer.new(@@channel, 
                                     queue, 
                                     queue.generate_consumer_tag(queue_name), # consumer_tag
                                     false, # exclusive
                                     false) # no_ack
-      worker = Worker.new(queue_name, consumer, &block)
+      worker.consumer = consumer
       consumer.on_delivery do |headers, message|
         unless @@channel.connection.closing?
           task = worker.task
           begin
             task.headers = headers
             task.message = Yajl::Parser.parse(message)
-            result = task.call
+            task.call
           rescue Exception => e
             begin
               task.handle_error(e)
@@ -127,7 +128,7 @@ module Henchman
               STDERR.puts e.backtrace.join("\n")
             end
           ensure
-            headers.ack
+            task.ack!
           end
         end
       end
