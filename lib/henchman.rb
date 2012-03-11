@@ -84,6 +84,7 @@ module Henchman
       connection.close
     end
     @@connection = nil
+    AMQP.stop
   end
 
   #
