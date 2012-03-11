@@ -37,12 +37,20 @@ Within an EM.synchrony block
 
 or
 
-    Henchman.consume("test") do
+    Henchman.start("test") do
       puts message.inspect
       puts headers
     end
 
 The `script/publish` and `script/consume` scripts provide a test case as simple as possible.
+
+If you want error handling, you can just provide an error handling block with the return value of `consume`
+
+    Henchman.start("test") do
+      clever_message_handler(message)
+    end.error do
+      clever_error_handler(exception)
+    end
 
 ## Test suite
 
