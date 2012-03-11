@@ -55,5 +55,9 @@ describe Henchman do
     found.should == val
   end
 
+  it 'should let many consumers consume off the same queue'
+
+  it 'should let many producers produce to the same queue'
+
 end
 
