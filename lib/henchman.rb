@@ -193,7 +193,7 @@ module Henchman
                                     false) # no_ack
       worker.consumer = consumer
       consumer.on_delivery do |headers, message|
-        unless @@channel.connection.closing?
+        if queue.channel.status == :opened
           task = worker.task
           begin
             task.headers = headers
