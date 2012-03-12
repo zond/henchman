@@ -236,9 +236,18 @@ module Henchman
   #
   # Shorthand for <code>EM.synchrony do consume(queue_name, &block) end</code>.
   #
-  def start(queue_name, &block)
+  def start_consuming(queue_name, &block)
     EM.synchrony do
       consume(queue_name, &block)
+    end
+  end  
+  
+  #
+  # Shorthand for <code>EM.synchrony do receive(queue_name, &block) end</code>.
+  #
+  def start_receiving(queue_name, &block)
+    EM.synchrony do
+      receive(queue_name, &block)
     end
   end  
   

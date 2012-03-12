@@ -4,7 +4,7 @@ $: << File.join(File.dirname(__FILE__), "..", "lib")
 
 require 'henchman'
 
-Henchman.start_consuming("test") do
+Henchman.start_receiving("testpub") do
   puts message.inspect
   puts headers
 end
