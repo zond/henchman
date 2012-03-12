@@ -143,8 +143,8 @@ module Henchman
   # @param [String] queue_name the name of the queue to publish to.
   # @param [Object] message the message to publish
   #
-  def publish(queue_name, message)
-    EM::Synchrony.sync(apublish(queue_name, message))
+  def enqueue(queue_name, message)
+    EM::Synchrony.sync(aenqueue(queue_name, message))
   end
 
   #
@@ -154,7 +154,7 @@ module Henchman
   #
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
-  def apublish(queue_name, message)
+  def aenqueue(queue_name, message)
     deferrable = EM::DefaultDeferrable.new
     with_direct_exchange do |exchange|
       exchange.publish(Yajl::Encoder.encode(message), :routing_key => queue_name) do 

@@ -62,14 +62,14 @@ module Henchman
       end
 
       #
-      # Publish something on another queue.
+      # Enqueue something on another queue.
       #
       # @param [String] queue_name the name of the queue on which to publish.
       # @param [Object] message the message to publish-
       #
-      def publish(queue_name, message)
+      def enqueue(queue_name, message)
         Fiber.new do
-          Henchman.publish(queue_name, message)
+          Henchman.enqueue(queue_name, message)
         end.resume
       end
 

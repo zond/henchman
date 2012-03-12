@@ -16,7 +16,7 @@ describe Henchman do
     end
   end
 
-  it 'should consume published jobs' do
+  it 'should consume jobs' do
     val = rand(1 << 32)
     found = nil
     deferrable = EM::DefaultDeferrable.new
@@ -27,7 +27,7 @@ describe Henchman do
       end
       nil
     end
-    Henchman.publish("test.queue", :val => val)
+    Henchman.enqueue("test.queue", :val => val)
     EM::Synchrony.sync deferrable
     found.should == val
   end
@@ -45,12 +45,12 @@ describe Henchman do
     end
     Henchman.consume("test.queue") do
       if message["val"] == val
-        publish("test.queue2", "val" => val)
+        enqueue("test.queue2", "val" => val)
       else
         nil
       end
     end
-    Henchman.publish("test.queue", :val => val, :bajs => "hepp")
+    Henchman.enqueue("test.queue", :val => val, :bajs => "hepp")
     EM::Synchrony.sync deferrable
     found.should == val
   end
@@ -67,8 +67,8 @@ describe Henchman do
       end
       nil
     end
-    Henchman.publish("test.queue", :val => val)
-    Henchman.publish("test.queue", :val => val)
+    Henchman.enqueue("test.queue", :val => val)
+    Henchman.enqueue("test.queue", :val => val)
     EM::Synchrony.sync deferrable
     EM::Synchrony.sleep 0.2
     found.should == 1
@@ -89,7 +89,7 @@ describe Henchman do
         deferrable.set_deferred_status :succeeded
       end
     end
-    Henchman.publish("test.queue", :val => val)
+    Henchman.enqueue("test.queue", :val => val)
     EM::Synchrony.sync deferrable
     error.message.should == "error!"
   end
@@ -124,7 +124,7 @@ describe Henchman do
       nil
     end
     10.times do
-      Henchman.publish("test.queue", :val => val)
+      Henchman.enqueue("test.queue", :val => val)
     end
     EM::Synchrony.sync deferrable
     consumers.should == Set.new(["1", "2", "3"])
