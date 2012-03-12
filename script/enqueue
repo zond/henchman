@@ -6,7 +6,7 @@ require 'henchman'
 
 EM.synchrony do
   10.times do
-    Henchman.publish("test", {:time => Time.now.to_s})
+    Henchman.enqueue("test", {:time => Time.now.to_s})
     EM::Synchrony.sleep 0.5
   end
   EM.stop

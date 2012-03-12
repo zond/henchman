@@ -33,7 +33,7 @@ henchman naturally needs [RabbitMQ](http://www.rabbitmq.com/) to run. Install it
 
 Within an EM.synchrony block
 
-    Henchman.publish("test", {:time => Time.now.to_s})
+    Henchman.enqueue("test", {:time => Time.now.to_s})
 
 or
 
@@ -42,7 +42,7 @@ or
       puts headers
     end
 
-The `script/publish` and `script/consume` scripts provide a test case as simple as possible.
+The `script/enqueue` and `script/consume` scripts provide a test case as simple as possible.
 
 If you want error handling, you can just provide an error handling block with the return value of `consume`
 
