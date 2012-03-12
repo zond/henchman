@@ -57,15 +57,28 @@ module Henchman
   end
 
   #
-  # Will return the default options to use when creating queues and exchanges.
+  # Will return the default options to use when creating queues.
   #
   # If you change the returned {::Hash} the changes will persist in this instance, so use this to configure stuff.
   #
-  # @return [Hash] a {::Hash} of options to use when creating exchanges and queues.
+  # @return [Hash] a {::Hash} of options to use when creating queues.
   #
   def queue_options
     @queue_options ||= {
       :durable => true,
+      :auto_delete => true
+    }
+  end
+
+  #
+  # Will return the default options to use when creating exchanges.
+  #
+  # If you change the returned {::Hash} the changes will persist in this instance, so use this to configure stuff.
+  #
+  # @return [Hash] a {::Hash} of options to use when creating exchanges.
+  #
+  def exchange_options
+    @exchange_options ||= {
       :auto_delete => true
     }
   end
@@ -132,7 +145,7 @@ module Henchman
   #
   def with_direct_exchange(&block)
     with_channel do |channel|
-      channel.direct(AMQ::Protocol::EMPTY_STRING, queue_options, &block)
+      channel.direct(AMQ::Protocol::EMPTY_STRING, exchange_options, &block)
     end
   end
 
@@ -144,7 +157,7 @@ module Henchman
   #
   def with_fanout_exchange(exchange_name, &block)
     with_channel do |channel|
-      channel.fanout(exchange_name, queue_options, &block)
+      channel.fanout(exchange_name, exchange_options, &block)
     end
   end
 
