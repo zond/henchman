@@ -14,7 +14,19 @@ module Henchman
 
   @@connection = nil
   @@channel = nil
+  @@error_handler = Proc.new do
+    STDERR.puts("consume(#{queue_name.inspect}, #{headers.inspect}, #{message.inspect}): #{exception.message}")
+    STDERR.puts(exception.backtrace.join("\n"))
+  end
 
+  def self.error_handler
+    @@error_handler
+  end
+
+  def error(&block)
+    @@error_handler = block
+  end
+  
   #
   # Will return a URL to the AMQP broker to use. Will get this from the <code>ENV</code> variable <code>AMQP_URL</code> if present.
   #

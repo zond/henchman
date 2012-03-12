@@ -94,11 +94,6 @@ module Henchman
     attr_accessor :queue_name
 
     #
-    # [Proc] the {::Proc} handling errors for this {::Henchman::Worker}.
-    #
-    attr_accessor :error_handler
-
-    #
     # [AMQP::Consumer] the consumer feeding this {::Henchman::Worker} with messages.
     #
     attr_accessor :consumer
@@ -115,10 +110,7 @@ module Henchman
     def initialize(queue_name, &block)
       @block = block
       @queue_name = queue_name
-      @error_handler = Proc.new do
-        STDERR.puts("consume(#{queue_name.inspect}, #{headers.inspect}, #{message.inspect}): #{exception.message}")
-        STDERR.puts(exception.backtrace.join("\n"))
-      end
+      @error_handler = nil
     end
 
     #
@@ -126,6 +118,17 @@ module Henchman
     #
     def task
       Task.new(self)
+    end
+
+    #
+    # @return [Proc] the error handler for this {::Henchman::Worker} or the global {::Henchman} error handler if nil.
+    #
+    def error_handler
+      if @error_handler
+        @error_handler
+      else
+        Henchman.error_handler
+      end
     end
 
     #

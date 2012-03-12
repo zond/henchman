@@ -74,6 +74,27 @@ describe Henchman do
     found.should == 1
   end
 
+  it 'handles errors with a global error handler' do
+    val = rand(1 << 32)
+    error = nil
+    deferrable = EM::DefaultDeferrable.new
+    Henchman.consume("test.queue") do
+      if message["val"] == val
+        raise "error!"
+      end
+      nil
+    end
+    Henchman.error do
+      if exception.message == "error!"
+        error = exception
+        deferrable.set_deferred_status :succeeded
+      end
+    end
+    Henchman.enqueue("test.queue", :val => val)
+    EM::Synchrony.sync deferrable
+    error.message.should == "error!"
+  end
+
   it 'handles errors with a defined error handler' do
     val = rand(1 << 32)
     error = nil
