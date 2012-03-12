@@ -137,6 +137,36 @@ module Henchman
   end
 
   #
+  # Will yield an open and ready fanout exchange.
+  #
+  # @param [String] exchange_name the name of the exchange to create or find.
+  # @param [Proc] block a {::Proc} to yield an open and ready fanout exchange to.
+  #
+  def with_fanout_exchange(exchange_name, &block)
+    with_channel do |channel|
+      channel.fanout(exchange_name, queue_options, &block)
+    end
+  end
+
+  #
+  # Will yield an open and ready queue bound to an open and ready fanout exchange.
+  #
+  # @param [String] exchange_name the name of the exchange to create or find
+  # @param [Proc] block the {::Proc} to yield an open and ready queue bound to the found exchange to.
+  #
+  def with_fanout_queue(exchange_name, &block)
+    with_channel do |channel|
+      with_fanout_exchange(exchange_name) do |exchange|
+        channel.queue do |queue|
+          queue.bind(exchange) do
+            yield queue
+          end
+        end
+      end
+    end
+  end
+
+  #
   # Will yield an open and ready queue.
   #
   # @param [Proc] block a {::Proc} to yield an open and ready queue to.
@@ -150,17 +180,17 @@ module Henchman
   end
 
   #
-  # Publish a message synchronously.
+  # Enqueue a message synchronously.
   #
-  # @param [String] queue_name the name of the queue to publish to.
-  # @param [Object] message the message to publish
+  # @param [String] queue_name the name of the queue to enqueue on.
+  # @param [Object] message the message to enqueue.
   #
   def enqueue(queue_name, message)
     EM::Synchrony.sync(aenqueue(queue_name, message))
   end
 
   #
-  # Publish a message asynchronously.
+  # Enqueue a message asynchronously.
   #
   # @param (see #publish)
   #
@@ -175,7 +205,34 @@ module Henchman
     end
     deferrable
   end
+
+  #
+  # Publish a a message to multiple consumers synchronously.
+  #
+  # @param [String] exchange_name the name of the exchange to publish on.
+  # @param [Object] message the object to publish
+  #
+  def publish(exchange_name, message)
+    EM::Synchrony.sync(apublish(exchange_name, message))
+  end
   
+  #
+  # Publish a message to multiple consumers asynchronously.
+  #
+  # @param (see #publish)
+  #
+  # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
+  #
+  def apublish(exchange_name, message)
+    deferrable = EM::DefaultDeferrable.new
+    with_fanout_exchange(exchange_name) do |exchange|
+      exchange.publish(Yajl::Encoder.encode(message)) do
+        deferrable.set_deferred_status :succeeded
+      end
+    end
+    deferrable
+  end
+
   #
   # Shorthand for <code>EM.synchrony do consume(queue_name, &block) end</code>.
   #
@@ -183,25 +240,20 @@ module Henchman
     EM.synchrony do
       consume(queue_name, &block)
     end
-  end
-
+  end  
+  
   #
-  # Consume messages synchronously.
+  # Subscribe a worker to a queue.
   #
-  # @param [String] queue_name the name of the queue to consume messages from.
-  # @param [Proc] block the block to call for each message. The block will be 
-  #   <code>instance_eval</code>ed inside a {::Henchman::Worker::Task} and have 
-  #   access to all the particulars of the message through that instance.
+  # @param [AMQP::Queue] queue the {::AMQP::Queue} to subscribe the {::Henchman::Worker} to.
+  # @param [Henchman::Worker] worker the {::Henchman::Worker} to subscribe to the {::AMQP::Queue}.
+  # @param [EM::Deferrable] deferrable an {::EM::Deferrable} that will succeed with the subscription is done.
   #
-  # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
-  #   each received message.
-  #
-  def consume(queue_name, &block) 
-    worker = Worker.new(queue_name, &block)
-    with_queue(queue_name) do |queue|
-      consumer = AMQP::Consumer.new(@@channel, 
+  def subscribe(queue, worker, deferrable)
+    with_channel do |channel|
+      consumer = AMQP::Consumer.new(channel, 
                                     queue, 
-                                    queue.generate_consumer_tag(queue_name), # consumer_tag
+                                    queue.generate_consumer_tag(queue.name), # consumer_tag
                                     false, # exclusive
                                     false) # no_ack
       worker.consumer = consumer
@@ -224,8 +276,51 @@ module Henchman
           end
         end
       end
-      consumer.consume
+      consumer.consume do 
+        deferrable.set_deferred_status :succeeded
+      end
     end
+  end
+
+  #
+  # Receive published messages.
+  #
+  # @param [String] exchange_name the name of the fanout exchange to consume messages from.
+  # @param [Proc] block the block to call for each message. The block will be 
+  #   <code>instance_eval</code>ed inside a {::Henchman::Worker::Task} and have 
+  #   access to all the particulars of the message through that instance.
+  #
+  # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
+  #   each received message.
+  #
+  def receive(exchange_name, &block)
+    deferrable = EM::DefaultDeferrable.new
+    worker = Worker.new(exchange_name, &block)
+    with_fanout_queue(exchange_name) do |queue|
+      subscribe(queue, worker, deferrable)
+    end
+    EM::Synchrony.sync deferrable
+    worker
+  end
+
+  #
+  # Consume messages enqueued messages.
+  #
+  # @param [String] queue_name the name of the queue to consume messages from.
+  # @param [Proc] block the block to call for each message. The block will be 
+  #   <code>instance_eval</code>ed inside a {::Henchman::Worker::Task} and have 
+  #   access to all the particulars of the message through that instance.
+  #
+  # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
+  #   each received message.
+  #
+  def consume(queue_name, &block) 
+    deferrable = EM::DefaultDeferrable.new
+    worker = Worker.new(queue_name, &block)
+    with_queue(queue_name) do |queue|
+      subscribe(queue, worker, deferrable)
+    end
+    EM::Synchrony.sync deferrable
     worker
   end
 

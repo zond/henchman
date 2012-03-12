@@ -152,5 +152,42 @@ describe Henchman do
     found.should == 10
   end
 
+  it 'should let many consumers consume off the same fanout' do
+    consumers = Set.new
+    found = 0
+    val = rand(1 << 32)
+    deferrable = EM::DefaultDeferrable.new
+    Henchman.receive("test.exchange") do
+      if message["val"] == val
+        consumers << "1"
+        found += 1
+        deferrable.set_deferred_status :succeeded if found == 30
+      end
+      nil
+    end
+    Henchman.receive("test.exchange") do
+      if message["val"] == val
+        consumers << "2"
+        found += 1
+        deferrable.set_deferred_status :succeeded if found == 30
+      end
+      nil
+    end
+    Henchman.receive("test.exchange") do
+      if message["val"] == val
+        consumers << "3"
+        found += 1
+        deferrable.set_deferred_status :succeeded if found == 30
+      end
+      nil
+    end
+    10.times do |n|
+      Henchman.publish("test.exchange", :val => val, :n => n)
+    end
+    EM::Synchrony.sync deferrable
+    consumers.should == Set.new(["1", "2", "3"])
+    found.should == 30
+  end
+
 end
 
