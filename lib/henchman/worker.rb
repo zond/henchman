@@ -58,7 +58,7 @@ module Henchman
           @exception = e
           @result = instance_eval(&(Henchman.error_handler))
         ensure
-          headers.ack
+          headers.ack if headers.respond_to?(:ack)
         end
       end
 
@@ -82,15 +82,6 @@ module Henchman
       end
     end
 
-    @@workers = {}
-
-    #
-    # @return [Array<Henchman::Worker>] the {::Henchman::Workers} created in this ruby.
-    #
-    def self.workers
-      @@workers
-    end
-
     #
     # [String] the name of the queue this {::Henchman::Worker} listens to.
     #
@@ -107,36 +98,33 @@ module Henchman
     attr_accessor :block
 
     #
-    # [Symbol] the type of exchange this {::Henchman::Worker} listens to.
-    #
-    attr_accessor :exchange_type
-    
-    #
     # @param [String] queue_name the name of the queue this worker listens to.
     # @param [Symbol] exchange_type the type of exchange this worker will connect its queue to.
     # @param [Proc] block the {::Proc} that will handle the messages for this {::Henchman::Worker}.
     #
-    def initialize(queue_name, exchange_type, &block)
+    def initialize(queue_name, &block)
       @block = block
-      @exchange_type = exchange_type
       @queue_name = queue_name
-      @@workers[queue_name] ||= []
-      @@workers[queue_name] << self
     end
 
     #
-    # Make this {::Henchman::Worker} subscribe to its queue.
+    # Make this {::Henchman::Worker} subscribe to a fanout exchange.
     #
     def subscribe!
       deferrable = EM::DefaultDeferrable.new
-      if exchange_type == :direct
-        Henchman.with_queue(queue_name) do |queue|
-          Henchman.subscribe(queue, self, deferrable)
-        end
-      elsif exchange_type == :fanout
-        Henchman.with_fanout_queue(queue_name) do |queue|
-          Henchman.subscribe(queue, self, deferrable)
-        end
+      Henchman.with_fanout_queue(queue_name) do |queue|
+        Henchman.subscribe(queue, self, deferrable)
+      end
+      EM::Synchrony.sync deferrable
+    end
+
+    #
+    # Make this {::Henchman::Worker} subscribe to a direct exchange.
+    #
+    def consume!
+      deferrable = EM::DefaultDeferrable.new
+      Henchman.with_queue(queue_name) do |queue|
+        Henchman.subscribe(queue, self, deferrable)
       end
       EM::Synchrony.sync deferrable
     end
@@ -149,27 +137,8 @@ module Henchman
     #
     # @return [Henchman::Worker::Task] a {::Henchman::Worker::Task} for this {::Henchman::Worker}.
     #
-    def call(headers, message)
-      task = Task.new(self, headers, message)
-      begin
-        task.call
-      ensure
-        route = (headers.header[:headers] || {})["route"]
-        if !route.nil? && !task.result.nil?
-          route_parts = route.split(/,/)
-          next_queue_name, method_name = route_parts.shift.split(/:/)
-          if method_name.nil?
-            if exchange_type == :direct
-              method_name = :enqueue
-            elsif exchange_type == :fanout
-              method_name = :publish
-            end
-          end
-          Fiber.new do
-            Henchman.send(method_name, [next_queue_name] + route_parts, task.result)
-          end.resume
-        end
-      end
+    def call(message, headers = nil)
+      Task.new(self, headers, message).call
     end
 
     #

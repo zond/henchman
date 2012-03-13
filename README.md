@@ -35,39 +35,45 @@ henchman naturally needs [RabbitMQ](http://www.rabbitmq.com/) to run. Install it
 
 To enqueue jobs that will only be consumed by a single consumer, you 
 
-    Henchman.enqueue("test", {:time => Time.now.to_s})
-
-within an EM.synchrony block.
+    EM.synchrony do
+      Henchman.enqueue("test", {:time => Time.now.to_s})
+    end
 
 To consume jobs enqueued this way
 
-    Henchman.job("test") do
-      puts message.inspect
-      puts headers
-    end.subscribe!
+    EM.synchrony do
+      Henchman::Worker.new("test") do
+        puts message.inspect
+        puts headers
+      end.consume!
+    end
 
 The `script/enqueue` and `script/consume` scripts provide a test case as simple as possible.
 
 If you want a global error handler for the all consumers in your Ruby environment
 
-    Henchman.error do
-      global_error_handler(exception)
+    EM.synchrony do
+      Henchman.error do
+        global_error_handler(exception)
+      end
     end
 
 ### Broadcasts
 
 To publish jobs that will be consumed by every consumer listening to your exchange, you
 
-    Henchman.publish("testpub", {:time => Time.now.to_s})
-
-within an EM.synchrony block.
+    EM.synchrony do
+      Henchman.publish("testpub", {:time => Time.now.to_s})
+    end
 
 To consume jobs published this way
 
-    Henchman.receiver("test") do
-      puts message.inspect
-      puts headers
-    end.subscribe!
+    EM.synchrony do
+      Henchman::Worker.new("test") do
+        puts message.inspect
+        puts headers
+      end.subscribe!
+    end
 
 The `script/publish` and `script/receive` scripts provide a test case as simple as possible.
 

@@ -13,12 +13,12 @@ describe Henchman do
     it 'allows testing of workers' do
       val = rand(1 << 32)
       found = nil
-      Henchman.job("test.queue") do
+      worker = Henchman::Worker.new("test.queue") do
         if message["val"] == val
           found = val
         end
       end
-      Henchman.handle("test.queue", "", {"val" => val})
+      worker.call("val" => val)
       found.should == val
     end
 
@@ -38,13 +38,13 @@ describe Henchman do
       val = rand(1 << 32)
       found = nil
       deferrable = EM::DefaultDeferrable.new
-      Henchman.job("test.queue") do
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           found = val
           deferrable.set_deferred_status :succeeded
         end
         nil
-      end.subscribe!
+      end.consume!
       Henchman.enqueue("test.queue", :val => val)
       EM::Synchrony.sync deferrable
       found.should == val
@@ -54,20 +54,20 @@ describe Henchman do
       val = rand(1 << 32)
       found = nil
       deferrable = EM::DefaultDeferrable.new
-      Henchman.job("test.queue2") do
+      Henchman::Worker.new("test.queue2") do
         if message["val"] == val
           found = val
           deferrable.set_deferred_status :succeeded
         end
         nil
-      end.subscribe!
-      Henchman.job("test.queue") do
+      end.consume!
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           enqueue("test.queue2", "val" => val)
         else
           nil
         end
-      end.subscribe!
+      end.consume!
       Henchman.enqueue("test.queue", :val => val, :bajs => "hepp")
       EM::Synchrony.sync deferrable
       found.should == val
@@ -77,14 +77,14 @@ describe Henchman do
       val = rand(1 << 32)
       found = 0
       deferrable = EM::DefaultDeferrable.new
-      Henchman.job("test.queue") do
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           found += 1
           unsubscribe!
           deferrable.set_deferred_status :succeeded
         end
         nil
-      end.subscribe!
+      end.consume!
       Henchman.enqueue("test.queue", :val => val)
       Henchman.enqueue("test.queue", :val => val)
       EM::Synchrony.sync deferrable
@@ -96,12 +96,12 @@ describe Henchman do
       val = rand(1 << 32)
       error = nil
       deferrable = EM::DefaultDeferrable.new
-      Henchman.job("test.queue") do
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           raise "error!"
         end
         nil
-      end.subscribe!
+      end.consume!
       Henchman.error do
         if exception.message == "error!"
           error = exception
@@ -113,66 +113,35 @@ describe Henchman do
       error.message.should == "error!"
     end
 
-    it 'should allow jobs to be chained when enqueued' do
-      val = rand(1 << 32)
-      state = 0
-      deferrable = EM::DefaultDeferrable.new
-      Henchman.job("test.queue") do
-        if message["val"] == val
-          state = 1 if state == 0
-          message
-        end
-      end.subscribe!
-      Henchman.job("test.queue.next") do
-        if message["val"] == val
-          if state == 1
-            state = 2
-            message
-          end
-        end
-      end.subscribe!
-      Henchman.receiver("test.receiver.next") do
-        if message["val"] == val
-          if state == 2
-            state = 3
-            deferrable.set_deferred_status :succeeded
-          end
-        end
-      end.subscribe!
-      Henchman.enqueue(["test.queue", "test.queue.next", "test.receiver.next:publish"], :val => val)
-      EM::Synchrony.sync deferrable
-      state.should == 3
-    end
-
     it 'should let many consumers consume off the same queue' do
       consumers = Set.new
       found = 0
       val = rand(1 << 32)
       deferrable = EM::DefaultDeferrable.new
-      Henchman.job("test.queue") do
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           consumers << "1"
           found += 1
           deferrable.set_deferred_status :succeeded if found == 10
         end
         nil
-      end.subscribe!
-      Henchman.job("test.queue") do
+      end.consume!
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           consumers << "2"
           found += 1
           deferrable.set_deferred_status :succeeded if found == 10
         end
         nil
-      end.subscribe!
-      Henchman.job("test.queue") do
+      end.consume!
+      Henchman::Worker.new("test.queue") do
         if message["val"] == val
           consumers << "3"
           found += 1
           deferrable.set_deferred_status :succeeded if found == 10
         end
         nil
-      end.subscribe!
+      end.consume!
       10.times do
         Henchman.enqueue("test.queue", :val => val)
       end
@@ -186,7 +155,7 @@ describe Henchman do
       found = 0
       val = rand(1 << 32)
       deferrable = EM::DefaultDeferrable.new
-      Henchman.receiver("test.exchange") do
+      Henchman::Worker.new("test.exchange") do
         if message["val"] == val
           consumers << "1"
           found += 1
@@ -194,7 +163,7 @@ describe Henchman do
         end
         nil
       end.subscribe!
-      Henchman.receiver("test.exchange") do
+      Henchman::Worker.new("test.exchange") do
         if message["val"] == val
           consumers << "2"
           found += 1
@@ -202,7 +171,7 @@ describe Henchman do
         end
         nil
       end.subscribe!
-      Henchman.receiver("test.exchange") do
+      Henchman::Worker.new("test.exchange") do
         if message["val"] == val
           consumers << "3"
           found += 1

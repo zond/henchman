@@ -5,8 +5,8 @@ $: << File.join(File.dirname(__FILE__), "..", "lib")
 require 'henchman'
 
 EM.synchrony do
-  Henchman::Worker.new("test") do
+  Henchman::Worker.new("testpub") do
     puts message.inspect
     puts headers
-  end.consume!
+  end.subscribe!
 end

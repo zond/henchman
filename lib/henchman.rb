@@ -203,33 +203,16 @@ module Henchman
   end
 
   #
-  # @nodoc
-  #
-  def queue_split(queue_names)
-    queue_names = Array(queue_names)
-    [queue_names.shift, queue_names]
-  end
-
-  #
   # Enqueue a message asynchronously.
   #
   # @param (see #publish)
   #
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
-  def aenqueue(queue_names, message)
-    queue_name, route = queue_split(queue_names)
+  def aenqueue(queue_name, message)
     deferrable = EM::DefaultDeferrable.new
     with_direct_exchange do |exchange|
-      options = {
-        :routing_key => queue_name
-      }
-      unless route.empty?
-        options[:headers] = {
-          :route => queue_names.join(",")
-        } 
-      end
-      exchange.publish(MultiJson.encode(message), options) do
+      exchange.publish(MultiJson.encode(message), :routing_key => queue_name) do
         deferrable.set_deferred_status :succeeded
       end
     end
@@ -254,16 +237,9 @@ module Henchman
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
   def apublish(exchange_name, message)
-    exchange_name, route = queue_split(exchange_name)
     deferrable = EM::DefaultDeferrable.new
     with_fanout_exchange(exchange_name) do |exchange|
-      options = {}
-      unless route.empty?
-        options[:headers] = {
-          :route => queue_names.join(",")
-        } 
-      end
-      exchange.publish(MultiJson.encode(message), options) do
+      exchange.publish(MultiJson.encode(message)) do
         deferrable.set_deferred_status :succeeded
       end
     end
@@ -288,7 +264,7 @@ module Henchman
       consumer.on_delivery do |headers, data|
         if queue.channel.status == :opened
           begin
-            worker.call(headers, MultiJson.decode(data))
+            worker.call(MultiJson.decode(data), headers)
           rescue Exception => e
             STDERR.puts e
             STDERR.puts e.backtrace.join("\n")
@@ -301,68 +277,5 @@ module Henchman
     end
   end
 
-  #
-  # Receive published messages.
-  #
-  # @param [String] exchange_name the name of the fanout exchange to consume messages from.
-  # @param [Proc] block the block to call for each message. The block will be 
-  #   <code>instance_eval</code>ed inside a {::Henchman::Worker::Task} and have 
-  #   access to all the particulars of the message through that instance.
-  #
-  # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
-  #   each received message.
-  #
-  def receiver(exchange_name, &block)
-    Worker.new(exchange_name, :fanout, &block)
-  end
-
-  #
-  # Consume messages enqueued messages.
-  #
-  # @param [String] queue_name the name of the queue to consume messages from.
-  # @param [Proc] block the block to call for each message. The block will be 
-  #   <code>instance_eval</code>ed inside a {::Henchman::Worker::Task} and have 
-  #   access to all the particulars of the message through that instance.
-  #
-  # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
-  #   each received message.
-  #
-  def job(queue_name, &block) 
-    Worker.new(queue_name, :direct, &block)
-  end
-
-  #
-  # Send a mock message to all defined {::Henchman::Worker} instances in this ruby.
-  #
-  def handle(queue_name, headers, message)
-    unless headers.respond_to?(:ack)
-      class << headers
-        attr_reader :ack
-      end
-    end
-    unless headers.respond_to?(:header)
-      class << headers
-        attr_accessor :header
-      end
-      headers.header = {}
-    end
-    (Worker.workers[queue_name] || []).each do |worker|
-      worker.call(headers, message)
-    end
-  end
-
-  #
-  # Make all created jobs and receivers start subscribing to AMQP.
-  #
-  def start!
-    EM.synchrony do
-      Worker.workers.each do |queue_name, workers|
-        workers.each do |worker|
-          worker.subscribe!
-        end
-      end
-    end
-  end
-  
 end
 
