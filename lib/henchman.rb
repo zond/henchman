@@ -246,36 +246,5 @@ module Henchman
     deferrable
   end
 
-  #
-  # Subscribe a worker to a queue.
-  #
-  # @param [AMQP::Queue] queue the {::AMQP::Queue} to subscribe the {::Henchman::Worker} to.
-  # @param [Henchman::Worker] worker the {::Henchman::Worker} to subscribe to the {::AMQP::Queue}.
-  # @param [EM::Deferrable] deferrable an {::EM::Deferrable} that will succeed with the subscription is done.
-  #
-  def subscribe(queue, worker, deferrable)
-    with_channel do |channel|
-      consumer = AMQP::Consumer.new(channel, 
-                                    queue, 
-                                    queue.generate_consumer_tag(queue.name), # consumer_tag
-                                    false, # exclusive
-                                    false) # no_ack
-      worker.consumer = consumer
-      consumer.on_delivery do |headers, data|
-        if queue.channel.status == :opened
-          begin
-            worker.call(MultiJson.decode(data), headers)
-          rescue Exception => e
-            STDERR.puts e
-            STDERR.puts e.backtrace.join("\n")
-          end
-        end
-      end
-      consumer.consume do 
-        deferrable.set_deferred_status :succeeded
-      end
-    end
-  end
-
 end
 
