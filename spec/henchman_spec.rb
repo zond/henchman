@@ -95,26 +95,6 @@ describe Henchman do
     error.message.should == "error!"
   end
 
-  it 'handles errors with a defined error handler' do
-    val = rand(1 << 32)
-    error = nil
-    deferrable = EM::DefaultDeferrable.new
-    Henchman.consume("test.queue") do
-      if message["val"] == val
-        raise "error!"
-      end
-      nil
-    end.error do
-      if exception.message == "error!"
-        error = exception
-        deferrable.set_deferred_status :succeeded
-      end
-    end
-    Henchman.enqueue("test.queue", :val => val)
-    EM::Synchrony.sync deferrable
-    error.message.should == "error!"
-  end
-
   it 'should let many consumers consume off the same queue' do
     consumers = Set.new
     found = 0

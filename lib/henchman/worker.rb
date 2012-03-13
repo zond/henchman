@@ -51,7 +51,7 @@ module Henchman
       #
       def handle_error(exception)
         @exception = exception
-        @result = instance_eval(&(worker.error_handler))
+        @result = instance_eval(&(Henchman.error_handler))
       end
 
       #
@@ -118,29 +118,6 @@ module Henchman
     #
     def task
       Task.new(self)
-    end
-
-    #
-    # @return [Proc] the error handler for this {::Henchman::Worker} or the global {::Henchman} error handler if nil.
-    #
-    def error_handler
-      if @error_handler
-        @error_handler
-      else
-        Henchman.error_handler
-      end
-    end
-
-    #
-    # Give this {::Henchman::Worker} a custom error handler.
-    #
-    # @param [Proc] block the {::Proc} to use for errors in this {::Henchman::Worker}. 
-    #   The {::Proc} will be <code>instance_eval</code>ed inside a {::Henchman::Worker::Task}
-    #   and have access to all the particulars of the message causing the {::Exception} through
-    #   that instance.
-    #
-    def error(&block)
-      @error_handler = block
     end
 
     #
