@@ -39,26 +39,27 @@ module Henchman
       # Create a {::Henchman::Worker::Task} for a given {::Henchman::Worker}.
       #
       # @param [Henchman::Worker] worker the {::Henchman::Worker} creating this {::Henchman::Worker::Task}.
+      # @param [AMQP::Header] header the {::AMQP::Header} being handled.
+      # @param [Object] message the {::Object} being handled.
       #
-      def initialize(worker)
+      def initialize(worker, headers, message)
         @worker = worker
-      end
-
-      #
-      # Handle an exception for a {::Henchman::Worker::Task}.
-      #
-      # @param [Exception] exception the {::Exception} that happened.
-      #
-      def handle_error(exception)
-        @exception = exception
-        @result = instance_eval(&(Henchman.error_handler))
+        @headers = headers
+        @message = message
       end
 
       #
       # Call this {::Henchman::Worker::Task}.
       #
       def call
-        @result = instance_eval(&(worker.block))
+        begin
+          @result = instance_eval(&(worker.block))
+        rescue Exception => e
+          @exception = e
+          @result = instance_eval(&(Henchman.error_handler))
+        ensure
+          headers.ack
+        end
       end
 
       #
@@ -74,18 +75,20 @@ module Henchman
       end
 
       #
-      # Acknowledge this message.
-      #
-      def ack!
-        headers.ack
-      end
-
-      #
       # Unsubscribe the {::Henchman::Worker} of this {::Henchman::Worker::Task} from the queue it subscribes to.
       # 
       def unsubscribe!
         worker.unsubscribe!
       end
+    end
+
+    @@workers = {}
+
+    #
+    # @return [Array<Henchman::Worker>] the {::Henchman::Workers} created in this ruby.
+    #
+    def self.workers
+      @@workers
     end
 
     #
@@ -104,20 +107,69 @@ module Henchman
     attr_accessor :block
 
     #
+    # [Symbol] the type of exchange this {::Henchman::Worker} listens to.
+    #
+    attr_accessor :exchange_type
+    
+    #
     # @param [String] queue_name the name of the queue this worker listens to.
+    # @param [Symbol] exchange_type the type of exchange this worker will connect its queue to.
     # @param [Proc] block the {::Proc} that will handle the messages for this {::Henchman::Worker}.
     #
-    def initialize(queue_name, &block)
+    def initialize(queue_name, exchange_type, &block)
       @block = block
+      @exchange_type = exchange_type
       @queue_name = queue_name
-      @error_handler = nil
+      @@workers[queue_name] ||= []
+      @@workers[queue_name] << self
     end
 
     #
+    # Make this {::Henchman::Worker} subscribe to its queue.
+    #
+    def subscribe!
+      deferrable = EM::DefaultDeferrable.new
+      if exchange_type == :direct
+        Henchman.with_queue(queue_name) do |queue|
+          Henchman.subscribe(queue, self, deferrable)
+        end
+      elsif exchange_type == :fanout
+        Henchman.with_fanout_queue(queue_name) do |queue|
+          Henchman.subscribe(queue, self, deferrable)
+        end
+      end
+      EM::Synchrony.sync deferrable
+    end
+
+    #
+    # Call this worker with some data.
+    #
+    # @param [AMQP::Header] headers the headers to handle.
+    # @param [Object] message the message to handle.
+    #
     # @return [Henchman::Worker::Task] a {::Henchman::Worker::Task} for this {::Henchman::Worker}.
     #
-    def task
-      Task.new(self)
+    def call(headers, message)
+      task = Task.new(self, headers, message)
+      begin
+        task.call
+      ensure
+        route = (headers.header[:headers] || {})["route"]
+        if !route.nil? && !task.result.nil?
+          route_parts = route.split(/,/)
+          next_queue_name, method_name = route_parts.shift.split(/:/)
+          if method_name.nil?
+            if exchange_type == :direct
+              method_name = :enqueue
+            elsif exchange_type == :fanout
+              method_name = :publish
+            end
+          end
+          Fiber.new do
+            Henchman.send(method_name, [next_queue_name] + route_parts, task.result)
+          end.resume
+        end
+      end
     end
 
     #

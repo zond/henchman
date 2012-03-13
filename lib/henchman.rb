@@ -1,7 +1,7 @@
 
 require 'em-synchrony'
 require 'amqp'
-require 'yajl'
+require 'multi_json'
 
 require 'henchman/worker'
 
@@ -203,16 +203,33 @@ module Henchman
   end
 
   #
+  # @nodoc
+  #
+  def queue_split(queue_names)
+    queue_names = Array(queue_names)
+    [queue_names.shift, queue_names]
+  end
+
+  #
   # Enqueue a message asynchronously.
   #
   # @param (see #publish)
   #
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
-  def aenqueue(queue_name, message)
+  def aenqueue(queue_names, message)
+    queue_name, route = queue_split(queue_names)
     deferrable = EM::DefaultDeferrable.new
     with_direct_exchange do |exchange|
-      exchange.publish(Yajl::Encoder.encode(message), :routing_key => queue_name) do 
+      options = {
+        :routing_key => queue_name
+      }
+      unless route.empty?
+        options[:headers] = {
+          :route => queue_names.join(",")
+        } 
+      end
+      exchange.publish(MultiJson.encode(message), options) do
         deferrable.set_deferred_status :succeeded
       end
     end
@@ -237,33 +254,22 @@ module Henchman
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
   def apublish(exchange_name, message)
+    exchange_name, route = queue_split(exchange_name)
     deferrable = EM::DefaultDeferrable.new
     with_fanout_exchange(exchange_name) do |exchange|
-      exchange.publish(Yajl::Encoder.encode(message)) do
+      options = {}
+      unless route.empty?
+        options[:headers] = {
+          :route => queue_names.join(",")
+        } 
+      end
+      exchange.publish(MultiJson.encode(message), options) do
         deferrable.set_deferred_status :succeeded
       end
     end
     deferrable
   end
 
-  #
-  # Shorthand for <code>EM.synchrony do consume(queue_name, &block) end</code>.
-  #
-  def start_consuming(queue_name, &block)
-    EM.synchrony do
-      consume(queue_name, &block)
-    end
-  end  
-  
-  #
-  # Shorthand for <code>EM.synchrony do receive(queue_name, &block) end</code>.
-  #
-  def start_receiving(queue_name, &block)
-    EM.synchrony do
-      receive(queue_name, &block)
-    end
-  end  
-  
   #
   # Subscribe a worker to a queue.
   #
@@ -279,22 +285,13 @@ module Henchman
                                     false, # exclusive
                                     false) # no_ack
       worker.consumer = consumer
-      consumer.on_delivery do |headers, message|
+      consumer.on_delivery do |headers, data|
         if queue.channel.status == :opened
-          task = worker.task
           begin
-            task.headers = headers
-            task.message = Yajl::Parser.parse(message)
-            task.call
+            task = worker.call(headers, MultiJson.decode(data))
           rescue Exception => e
-            begin
-              task.handle_error(e)
-            rescue Exception => e
-              STDERR.puts e
-              STDERR.puts e.backtrace.join("\n")
-            end
-          ensure
-            task.ack!
+            STDERR.puts e
+            STDERR.puts e.backtrace.join("\n")
           end
         end
       end
@@ -315,14 +312,8 @@ module Henchman
   # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
   #   each received message.
   #
-  def receive(exchange_name, &block)
-    deferrable = EM::DefaultDeferrable.new
-    worker = Worker.new(exchange_name, &block)
-    with_fanout_queue(exchange_name) do |queue|
-      subscribe(queue, worker, deferrable)
-    end
-    EM::Synchrony.sync deferrable
-    worker
+  def receiver(exchange_name, &block)
+    Worker.new(exchange_name, :fanout, &block)
   end
 
   #
@@ -336,14 +327,42 @@ module Henchman
   # @return [Henchman::Worker] a {::Henchman::Worker} that will execute {::Henchman::Worker::Tasks} for
   #   each received message.
   #
-  def consume(queue_name, &block) 
-    deferrable = EM::DefaultDeferrable.new
-    worker = Worker.new(queue_name, &block)
-    with_queue(queue_name) do |queue|
-      subscribe(queue, worker, deferrable)
-    end
-    EM::Synchrony.sync deferrable
-    worker
+  def job(queue_name, &block) 
+    Worker.new(queue_name, :direct, &block)
   end
 
+  #
+  # Send a mock message to all defined {::Henchman::Worker} instances in this ruby.
+  #
+  def handle(queue_name, headers, message)
+    unless headers.respond_to?(:ack)
+      class << headers
+        attr_reader :ack
+      end
+    end
+    unless headers.respond_to?(:header)
+      class << headers
+        attr_accessor :header
+      end
+      headers.header = {}
+    end
+    (Worker.workers[queue_name] || []).each do |worker|
+      worker.call(headers, message)
+    end
+  end
+
+  #
+  # Make all created jobs and receivers start subscribing to AMQP.
+  #
+  def start!
+    EM.synchrony do
+      Worker.workers.each do |queue_name, workers|
+        workers.each do |worker|
+          worker.subscribe!
+        end
+      end
+    end
+  end
+  
 end
+

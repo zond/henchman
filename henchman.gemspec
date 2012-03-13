@@ -17,6 +17,6 @@ Gem::Specification.new do |s|
 
   s.add_dependency 'amqp'
   s.add_dependency 'em-synchrony'
-  s.add_dependency 'yajl-ruby'
+  s.add_dependency 'multi_json'
 
 end
