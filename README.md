@@ -41,22 +41,14 @@ within an EM.synchrony block.
 
 To consume jobs enqueued this way
 
-    Henchman.start_consuming("test") do
+    Henchman.job("test") do
       puts message.inspect
       puts headers
-    end
+    end.subscribe!
 
 The `script/enqueue` and `script/consume` scripts provide a test case as simple as possible.
 
-If you want error handling, you can just provide an error handling block with the return value of `consume`
-
-    Henchman.start_consuming("test") do
-      clever_message_handler(message)
-    end.error do
-      clever_error_handler(exception)
-    end
-
-or, if you want a global error handler for the all consumers in your Ruby environment
+If you want a global error handler for the all consumers in your Ruby environment
 
     Henchman.error do
       global_error_handler(exception)
@@ -72,10 +64,10 @@ within an EM.synchrony block.
 
 To consume jobs published this way
 
-    Henchman.start_receiving("test") do
+    Henchman.receiver("test") do
       puts message.inspect
       puts headers
-    end
+    end.subscribe!
 
 The `script/publish` and `script/receive` scripts provide a test case as simple as possible.
 
