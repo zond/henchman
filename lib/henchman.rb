@@ -288,7 +288,7 @@ module Henchman
       consumer.on_delivery do |headers, data|
         if queue.channel.status == :opened
           begin
-            task = worker.call(headers, MultiJson.decode(data))
+            worker.call(headers, MultiJson.decode(data))
           rescue Exception => e
             STDERR.puts e
             STDERR.puts e.backtrace.join("\n")
