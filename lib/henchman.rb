@@ -18,11 +18,39 @@ module Henchman
     STDERR.puts("consume(#{queue_name.inspect}, #{headers.inspect}, #{message.inspect}): #{exception.message}")
     STDERR.puts(exception.backtrace.join("\n"))
   end
+  @@logger = Proc.new do |msg|
+    puts msg
+  end
 
+  #
+  # Define a log handler.
+  #
+  # @param [Proc] block the block that handles log messages.
+  #
+  def logger(&block)
+    @@logger = block
+  end
+  
+  #
+  # Log a message.
+  #
+  # @param [String] msg the message to log.
+  #
+  def log(msg)
+  end
+
+  #
+  # @return [Proc] the error handler
+  #
   def self.error_handler
     @@error_handler
   end
-
+  
+  #
+  # Define an error handler.
+  #
+  # @param [Proc] block the block that handles errors.
+  #
   def error(&block)
     @@error_handler = block
   end
@@ -119,6 +147,16 @@ module Henchman
   #
   def with_connection(&block)
     @@connection = AMQP.connect(amqp_options) if @@connection.nil? || @@connection.status == :closed
+    @@connection.on_tcp_connection_loss do
+      log("#{self} reconnecting")
+      @@connection.reconnect
+    end
+    @@connection.on_recovery do
+      log("#{self} reconnected!")
+    end 
+    @@connection.on_error do |connection, connection_close|
+      raise "#{connection}: #{connection_close.reply_text}"
+    end
     @@connection.on_open do 
       yield @@connection
     end
@@ -132,6 +170,10 @@ module Henchman
   def with_channel(&block)
     with_connection do |connection|
       @@channel = AMQP::Channel.new(connection, channel_options) if @@channel.nil? || @@channel.status == :closed
+      @@channel.on_error do |channel, channel_close|
+        log("#{self} reinitializing #{channel} due to #{channel_close}")
+        channel.reuse
+      end
       @@channel.once_open do 
         yield @@channel
       end
