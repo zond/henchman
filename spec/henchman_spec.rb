@@ -34,6 +34,38 @@ describe Henchman do
       end
     end
 
+    it 'should allow enqueing of headers' do
+      val = rand(1 << 32)
+      found = nil
+      deferrable = EM::DefaultDeferrable.new
+      Henchman::Worker.new("test.queue") do
+        if headers.header[:headers]["val"] == val
+          found = val
+          deferrable.set_deferred_status :succeeded
+        end
+        nil
+      end.consume!
+      Henchman.enqueue("test.queue", {}, {:val => val})
+      EM::Synchrony.sync deferrable
+      found.should == val
+    end
+
+    it 'should allow publishing of headers' do
+      val = rand(1 << 32)
+      found = nil
+      deferrable = EM::DefaultDeferrable.new
+      Henchman::Worker.new("test.receiver") do
+        if headers.header[:headers]["val"] == val
+          found = val
+          deferrable.set_deferred_status :succeeded
+        end
+        nil
+      end.subscribe!
+      Henchman.publish("test.receiver", {}, {:val => val})
+      EM::Synchrony.sync deferrable
+      found.should == val
+    end
+
     it 'should consume jobs' do
       val = rand(1 << 32)
       found = nil

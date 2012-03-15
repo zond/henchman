@@ -247,21 +247,21 @@ module Henchman
   # @param [String] queue_name the name of the queue to enqueue on.
   # @param [Object] message the message to enqueue.
   #
-  def enqueue(queue_name, message)
-    EM::Synchrony.sync(aenqueue(queue_name, message))
+  def enqueue(queue_name, message, headers = {})
+    EM::Synchrony.sync(aenqueue(queue_name, message, headers))
   end
 
   #
   # Enqueue a message asynchronously.
   #
-  # @param (see #publish)
+  # @param (see #enqueue)
   #
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
-  def aenqueue(queue_name, message)
+  def aenqueue(queue_name, message, headers = {})
     deferrable = EM::DefaultDeferrable.new
     with_direct_exchange do |exchange|
-      exchange.publish(MultiJson.encode(message), :routing_key => queue_name) do
+      exchange.publish(MultiJson.encode(message), :headers => headers, :routing_key => queue_name) do
         deferrable.set_deferred_status :succeeded
       end
     end
@@ -274,8 +274,8 @@ module Henchman
   # @param [String] exchange_name the name of the exchange to publish on.
   # @param [Object] message the object to publish
   #
-  def publish(exchange_name, message)
-    EM::Synchrony.sync(apublish(exchange_name, message))
+  def publish(exchange_name, message, headers = {})
+    EM::Synchrony.sync(apublish(exchange_name, message, headers))
   end
   
   #
@@ -285,10 +285,10 @@ module Henchman
   #
   # @return [EM::Deferrable] a deferrable that will succeed when the publishing is done.
   #
-  def apublish(exchange_name, message)
+  def apublish(exchange_name, message, headers = {})
     deferrable = EM::DefaultDeferrable.new
     with_fanout_exchange(exchange_name) do |exchange|
-      exchange.publish(MultiJson.encode(message)) do
+      exchange.publish(MultiJson.encode(message), :headers => headers) do
         deferrable.set_deferred_status :succeeded
       end
     end

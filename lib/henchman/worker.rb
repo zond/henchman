@@ -49,6 +49,13 @@ module Henchman
       end
 
       #
+      # @return [String] the name of the queue the worker of this task listens to.
+      #
+      def queue_name
+        worker.queue_name
+      end
+
+      #
       # Call this {::Henchman::Worker::Task}.
       #
       def call
