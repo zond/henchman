@@ -61,7 +61,14 @@ module Henchman
   # @return [String] a URL to an AMQP broker.
   #
   def amqp_url
-    ENV["AMQP_URL"] || "amqp://localhost/"
+    @amqp_url ||= (ENV["AMQP_URL"] || "amqp://localhost/")
+  end
+
+  #
+  # @return [String] the AMQP broker url to use.
+  #
+  def amqp_url=(url)
+    @amqp_url = url
   end
 
   #
